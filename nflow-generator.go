@@ -7,11 +7,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/jessevdk/go-flags"
-	"math/rand"
 	"net"
 	"os"
 	"time"
+
+	"github.com/jessevdk/go-flags"
 )
 
 type Proto int
@@ -32,12 +32,13 @@ const (
 )
 
 var opts struct {
-	CollectorIP   string `short:"t" long:"target" description:"target ip address of the netflow collector"`
-	CollectorPort string `short:"p" long:"port" description:"port number of the target netflow collector"`
-	SpikeProto    string `short:"s" long:"spike" description:"run a second thread generating a spike for the specified protocol"`
-    FalseIndex    bool   `short:"f" long:"false-index" description:"generate false SNMP interface indexes, otherwise set to 0"`
-    FlowCount     int    `short:"c" long:"flow-count" description:"set the number of flows to generate in each iteration" default:"16" max:"128" min:"8"`
-    Help          bool   `short:"h" long:"help" description:"show nflow-generator help"`
+	CollectorIP        string `short:"t" long:"target" description:"target ip address of the netflow collector"`
+	CollectorPort      string `short:"p" long:"port" description:"port number of the target netflow collector"`
+	FalseIndex         bool   `short:"f" long:"false-index" description:"generate false SNMP interface indexes, otherwise set to 0"`
+	Help               bool   `short:"h" long:"help" description:"show nflow-generator help"`
+	ReportingIntervall string `short:"i" long:"reporting-intervall" description:"intervall in which the flow should be send to the collector"`
+	NrOfPackets        int    `short:"n" long:"packets-per-flow" description:"set the number of reported packets per flow"`
+	BytesPerFlow       int    `short:"b" long:"bytes-per-flow" description:"set the number of reported bytes per flow"`
 }
 
 func main() {
@@ -55,6 +56,23 @@ func main() {
 		showUsage()
 		os.Exit(1)
 	}
+	if opts.ReportingIntervall == "" {
+		showUsage()
+		os.Exit(1)
+	}
+	intervall, err := time.ParseDuration(opts.ReportingIntervall)
+	if err != nil {
+		log.Fatal("Failed to parse reporting intervall \""+opts.ReportingIntervall+"\" due to ", err.Error())
+	}
+
+	if opts.NrOfPackets == 0 {
+		showUsage()
+		os.Exit(1)
+	}
+	if opts.BytesPerFlow == 0 {
+		showUsage()
+		os.Exit(1)
+	}
 	collector := opts.CollectorIP + ":" + opts.CollectorPort
 	udpAddr, err := net.ResolveUDPAddr("udp", collector)
 	if err != nil {
@@ -68,39 +86,14 @@ func main() {
 		"Use ctrl^c to terminate the app.", opts.CollectorIP, opts.CollectorPort)
 
 	for {
-		rand.Seed(time.Now().Unix())
-		n := randomNum(50, 1000)
-		// add spike data
-		if opts.SpikeProto != "" {
-			GenerateSpike()
+		data := GenerateNetflow(opts.BytesPerFlow, opts.NrOfPackets)
+		buffer := BuildNFlowPayload(data)
+		_, err := conn.Write(buffer.Bytes())
+		if err != nil {
+			log.Fatal("Error connecting to the target collector: ", err)
 		}
-		if n > 900 {
-			data := GenerateNetflow(8)
-			buffer := BuildNFlowPayload(data)
-			_, err := conn.Write(buffer.Bytes())
-			if err != nil {
-				log.Fatal("Error connecting to the target collector: ", err)
-			}
-		} else {
-			data := GenerateNetflow(opts.FlowCount)
-			buffer := BuildNFlowPayload(data)
-			_, err := conn.Write(buffer.Bytes())
-			if err != nil {
-				log.Fatal("Error connecting to the target collector: ", err)
-			}
-		}
-		// add some periodic spike data
-		if n < 150 {
-			sleepInt := time.Duration(3000)
-			time.Sleep(sleepInt * time.Millisecond)
-		}
-		sleepInt := time.Duration(n)
-		time.Sleep(sleepInt * time.Millisecond)
+		time.Sleep(intervall)
 	}
-}
-
-func randomNum(min, max int) int {
-	return rand.Intn(max-min) + min
 }
 
 func showUsage() {
