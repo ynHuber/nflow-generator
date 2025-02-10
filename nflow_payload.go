@@ -94,15 +94,19 @@ func BuildNFlowPayload(data Netflow) bytes.Buffer {
 }
 
 // Generate a netflow packet w/ user-defined record count
-func GenerateNetflow(bytesPerFlow int, nrOfPackets int) Netflow {
+func GenerateNetflow(bytesPerFlow int, nrOfPackets int, flowDuration time.Duration) Netflow {
 	data := new(Netflow)
 	header := CreateNFlowHeader()
 	payload := new(NetflowPayload)
-	FillCommonFields(payload, uint32(nrOfPackets), uint32(bytesPerFlow), 6, rand.Intn(32))
+	FillCommonFields(payload, uint32(nrOfPackets), uint32(bytesPerFlow), 17, rand.Intn(32))
 
-	payload.SrcIP = IPtoUint32("127.0.0.1")
-	payload.DstIP = IPtoUint32("127.0.0.2")
-	payload.NextHopIP = IPtoUint32("127.0.0.2")
+	payload.SrcIP = IPtoUint32("127.0.0.2")
+	payload.DstIP = IPtoUint32("127.0.0.1")
+	payload.NextHopIP = IPtoUint32("127.0.0.3")
+
+	uptime := int(sysUptime)
+	payload.SysUptimeEnd = uint32(uptime)
+	payload.SysUptimeStart = payload.SysUptimeEnd - uint32(flowDuration.Milliseconds())
 
 	payload.SrcPrefixMask = 0
 	payload.DstPrefixMask = 0
@@ -111,7 +115,7 @@ func GenerateNetflow(bytesPerFlow int, nrOfPackets int) Netflow {
 	payload.DstAsNumber = 553
 
 	payload.SrcPort = uint16(40)
-	payload.DstPort = uint16(HTTPS_PORT)
+	payload.DstPort = uint16(NTP_PORT)
 
 	records := make([]NetflowPayload, 1)
 	records[0] = *payload
@@ -159,10 +163,6 @@ func FillCommonFields(
 		payload.SnmpOutIndex = 1
 	}
 
-	uptime := int(sysUptime)
-	payload.SysUptimeEnd = uint32(uptime - randomNum(10, 500))
-	payload.SysUptimeStart = payload.SysUptimeEnd - uint32(randomNum(10, 500))
-
 	// log.Infof("S&D : %x %x %d, %d", payload.SrcIP, payload.DstIP, payload.DstPort, payload.SnmpInIndex)
 	// log.Infof("Time: %d %d %d", sysUptime, payload.SysUptimeStart, payload.SysUptimeEnd)
 
@@ -191,7 +191,7 @@ func CreateNFlowHeader() NetflowHeader {
 	h.FlowSequence = flowSequence
 	h.EngineType = 1
 	h.EngineId = 0
-	h.SampleInterval = 0
+	h.SampleInterval = 1
 	return *h
 }
 

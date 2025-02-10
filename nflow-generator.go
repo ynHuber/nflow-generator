@@ -42,7 +42,6 @@ var opts struct {
 }
 
 func main() {
-
 	_, err := flags.Parse(&opts)
 	if err != nil {
 		showUsage()
@@ -85,14 +84,17 @@ func main() {
 	log.Infof("sending netflow data to a collector ip: %s and port: %s. \n"+
 		"Use ctrl^c to terminate the app.", opts.CollectorIP, opts.CollectorPort)
 
+	start := time.Now()
 	for {
-		data := GenerateNetflow(opts.BytesPerFlow, opts.NrOfPackets)
+		flowEnd := start.Add(intervall)
+		data := GenerateNetflow(opts.BytesPerFlow, opts.NrOfPackets, intervall)
 		buffer := BuildNFlowPayload(data)
-		_, err := conn.Write(buffer.Bytes())
+		_, err = conn.Write(buffer.Bytes())
 		if err != nil {
 			log.Fatal("Error connecting to the target collector: ", err)
 		}
-		time.Sleep(intervall)
+		time.Sleep(intervall - time.Since(start))
+		start = flowEnd
 	}
 }
 
