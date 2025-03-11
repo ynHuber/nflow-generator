@@ -10,15 +10,16 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jessevdk/go-flags"
 )
 
-type TrafficDefinition int
+type TrafficType int
 
 const (
-	FTP TrafficDefinition = iota + 1
+	FTP TrafficType = iota + 1
 	SSH
 	DNS
 	HTTP
@@ -30,20 +31,24 @@ const (
 	MYSQL
 	P2P
 	BITTORRENT
+	CLDAP
 )
 
-var opts struct {
+type CommandLineOptions struct {
 	CollectorIP        string `short:"t" long:"target" description:"target ip address of the netflow collector"`
 	CollectorPort      string `short:"p" long:"port" description:"port number of the target netflow collector"`
+	Config             string `short:"c" long:"config" description:"path to configuration file"`
 	Help               bool   `short:"h" long:"help" description:"show nflow-generator help"`
 	ReportingIntervall string `short:"i" long:"reporting-intervall" description:"intervall in which the flow should be send to the collector"`
 	NrOfPackets        int    `short:"n" long:"packets-per-flow" description:"set the number of reported packets per flow"`
 	BytesPerFlow       int    `short:"b" long:"bytes-per-flow" description:"set the number of reported bytes per flow"`
-	TrafficDef         string `short:"d" long:"defiendTraffic" description:"generated netflow traffic definition" default:"ntp"`
+	TrafficType        string `short:"d" long:"defiendTraffic" description:"generated netflow traffic definition" default:"ntp"`
 	SampleInterval     uint16 `short:"s" long:"sample-intervall" description:"Sample intervall stated in the netflow headers" default:"1"`
 }
 
 func main() {
+	opts := CommandLineOptions{}
+
 	_, err := flags.Parse(&opts)
 	if err != nil {
 		showUsage()
@@ -53,6 +58,33 @@ func main() {
 		showUsage()
 		os.Exit(1)
 	}
+
+	if opts.Config == "" {
+		runSimpleNetflowGeneration(opts)
+	} else {
+		runWithConfig(opts.Config)
+	}
+
+}
+
+func runWithConfig(configFilePath string) {
+	configFile, err := os.ReadFile(configFilePath)
+	if err != nil {
+		log.Printf("[error] reading config file: %s", err)
+		return
+	}
+	generatorConfigurations := ParseGeneratorConfigurations(configFile)
+
+	wg := &sync.WaitGroup{}
+	for _, generatorConfiguration := range generatorConfigurations {
+		go runGenerator(generatorConfiguration, wg)
+	}
+	// wait for wait group to register in runGenerator
+	time.Sleep(time.Duration(time.Second))
+	wg.Wait()
+}
+
+func runSimpleNetflowGeneration(opts CommandLineOptions) {
 	if opts.CollectorIP == "" || opts.CollectorPort == "" {
 		showUsage()
 		os.Exit(1)
@@ -60,10 +92,6 @@ func main() {
 	if opts.ReportingIntervall == "" {
 		showUsage()
 		os.Exit(1)
-	}
-	intervall, err := time.ParseDuration(opts.ReportingIntervall)
-	if err != nil {
-		log.Fatal("Failed to parse reporting intervall \""+opts.ReportingIntervall+"\" due to ", err.Error())
 	}
 
 	if opts.NrOfPackets == 0 {
@@ -74,24 +102,67 @@ func main() {
 		os.Exit(1)
 	}
 
-	trafficDef := parseTrafficDefinition(opts.TrafficDef)
+	generatorConfiguration := GeneratorConfiguration{
+		CollectorConfiguration: &CollectorConfiguration{
+			CollectorIP:   opts.CollectorIP,
+			CollectorPort: opts.CollectorPort,
+		},
+		FlowConfigurations: []*FlowConfiguration{
+			{
+				ReportingIntervall: opts.ReportingIntervall,
+				NrOfPackets:        opts.NrOfPackets,
+				BytesPerFlow:       opts.BytesPerFlow,
+				TrafficType:        opts.TrafficType,
+				SampleInterval:     opts.SampleInterval,
+			},
+		},
+	}
 
-	collector := opts.CollectorIP + ":" + opts.CollectorPort
+	wg := &sync.WaitGroup{}
+	runGenerator(generatorConfiguration, wg)
+	wg.Wait()
+}
+
+func runGenerator(generatorConfiguration GeneratorConfiguration, wg *sync.WaitGroup) {
+	collectorConfiguration := generatorConfiguration.CollectorConfiguration
+	collector := collectorConfiguration.CollectorIP + ":" + collectorConfiguration.CollectorPort
 	udpAddr, err := net.ResolveUDPAddr("udp", collector)
 	if err != nil {
 		log.Fatal(err)
 	}
 	conn, err := net.DialUDP("udp", nil, udpAddr)
+	defer func() {
+		wg.Wait()
+		conn.Close()
+	}()
 	if err != nil {
 		log.Fatal("Error connecting to the target collector: ", err)
 	}
+
+	for _, flowDefinition := range generatorConfiguration.FlowConfigurations {
+		wg.Add(1)
+		go sendFlows(conn, flowDefinition, wg)
+	}
+
 	log.Infof("sending netflow data to a collector ip: %s and port: %s. \n"+
-		"Use ctrl^c to terminate the app.", opts.CollectorIP, opts.CollectorPort)
+		"Use ctrl^c to terminate the app.", collectorConfiguration.CollectorIP, collectorConfiguration.CollectorPort)
+}
+
+func sendFlows(conn *net.UDPConn, flowDefinition *FlowConfiguration, wg *sync.WaitGroup) {
+	defer func() {
+		wg.Done()
+	}()
+	trafficType := parseTrafficType(flowDefinition.TrafficType)
+
+	intervall, err := time.ParseDuration(flowDefinition.ReportingIntervall)
+	if err != nil {
+		log.Fatal("Failed to parse reporting intervall \""+flowDefinition.ReportingIntervall+"\" due to ", err.Error())
+	}
 
 	start := time.Now()
 	for {
 		flowEnd := start.Add(intervall)
-		data := GenerateNetflow(opts.BytesPerFlow, opts.NrOfPackets, intervall, trafficDef, opts.SampleInterval)
+		data := GenerateNetflow(flowDefinition.BytesPerFlow, flowDefinition.NrOfPackets, intervall, trafficType, flowDefinition.SampleInterval)
 		buffer := BuildNFlowPayload(data)
 		_, err = conn.Write(buffer.Bytes())
 		if err != nil {
@@ -102,44 +173,46 @@ func main() {
 	}
 }
 
-func parseTrafficDefinition(trafficDefinitionString string) TrafficDefinition {
-	var trafficDef TrafficDefinition
+func parseTrafficType(trafficTypeString string) TrafficType {
+	var trafficType TrafficType
 
-	switch strings.ToUpper(trafficDefinitionString) {
+	switch strings.ToUpper(trafficTypeString) {
 	case "":
 		//default
-		trafficDef = NTP
+		trafficType = NTP
 	case "FTP":
-		trafficDef = FTP
+		trafficType = FTP
 	case "SSH":
-		trafficDef = SSH
+		trafficType = SSH
 	case "DNS":
-		trafficDef = DNS
+		trafficType = DNS
 	case "HTTP":
-		trafficDef = HTTP
+		trafficType = HTTP
 	case "HTTPS":
-		trafficDef = HTTPS
+		trafficType = HTTPS
 	case "NTP":
-		trafficDef = NTP
+		trafficType = NTP
 	case "SNMP":
-		trafficDef = SNMP
+		trafficType = SNMP
 	case "ICMP":
-		trafficDef = ICMP
+		trafficType = ICMP
 	case "IMAPS":
-		trafficDef = IMAPS
+		trafficType = IMAPS
 	case "MYSQL":
-		trafficDef = MYSQL
+		trafficType = MYSQL
 	case "P2P":
-		trafficDef = P2P
+		trafficType = P2P
 	case "BITTORRENT":
-		trafficDef = BITTORRENT
+		trafficType = BITTORRENT
+	case "CLDAP":
+		trafficType = CLDAP
 
 	default:
-		log.Fatal("Failed to parse netflow traffic definition" + opts.TrafficDef)
+		log.Fatal("Failed to parse netflow traffic definition" + trafficTypeString)
 		showUsage()
 		os.Exit(1)
 	}
-	return trafficDef
+	return trafficType
 }
 
 func showUsage() {
@@ -156,7 +229,8 @@ Application Options:
   -d --netflow-traffic-definition= generated netflow traffic definition (default=ntp)
     protocol options are as follows:
         ftp - generates tcp/21
-        ssh  - generates tcp/22
+        ssh - generates tcp/22
+		cldap - generates udp/389
         dns - generates udp/54
         http - generates tcp/80
         https - generates tcp/443
@@ -172,6 +246,10 @@ Application Options:
   -r, --reporting-intervall= intervall in which flow messages should be send to the collector
   -s, --sample-intervall= Sample intervall stated in the netflow headers. (default=1)
   -t, --target= target ip address of the netflow collector
+
+Using a configuration file
+	The option -c, --config can be used to run the generator using a configuration file.
+	This allows specifiying multiple flow definitions that are run in parallel
 
 Help Options:
   -h, --help    Show this help message

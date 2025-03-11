@@ -31,6 +31,7 @@ const (
 	HTTPS_ALT_PORT  = 8080
 	P2P_PORT        = 6681
 	BITTORRENT_PORT = 6682
+	CLDAP_PORT      = 389
 	UINT16_MAX      = 65535
 	PAYLOAD_AVG_MD  = 1024
 	PAYLOAD_AVG_SM  = 256
@@ -95,12 +96,12 @@ func BuildNFlowPayload(data Netflow) bytes.Buffer {
 }
 
 // Generate a netflow packet w/ user-defined record count
-func GenerateNetflow(bytesPerFlow int, nrOfPackets int, flowDuration time.Duration, trafficDefinition TrafficDefinition, sampleInterval uint16) Netflow {
+func GenerateNetflow(bytesPerFlow int, nrOfPackets int, flowDuration time.Duration, trafficType TrafficType, sampleInterval uint16) Netflow {
 	data := new(Netflow)
 	header := CreateNFlowHeader()
 	header.SampleInterval = sampleInterval
 	payload := new(NetflowPayload)
-	FillCommonFields(payload, uint32(nrOfPackets), uint32(bytesPerFlow), ProtocollForTrafficType(trafficDefinition), rand.Intn(32))
+	FillCommonFields(payload, uint32(nrOfPackets), uint32(bytesPerFlow), ProtocollForTrafficType(trafficType), rand.Intn(32))
 
 	payload.SrcIP = IPtoUint32("127.0.0.2")
 	payload.DstIP = IPtoUint32("127.0.0.1")
@@ -117,7 +118,7 @@ func GenerateNetflow(bytesPerFlow int, nrOfPackets int, flowDuration time.Durati
 	payload.DstAsNumber = 553
 
 	payload.SrcPort = uint16(40)
-	payload.DstPort = uint16(PortForTrafficType(trafficDefinition))
+	payload.DstPort = uint16(PortForTrafficType(trafficType))
 
 	records := make([]NetflowPayload, 1)
 	records[0] = *payload
@@ -126,8 +127,8 @@ func GenerateNetflow(bytesPerFlow int, nrOfPackets int, flowDuration time.Durati
 	return *data
 }
 
-func PortForTrafficType(trafficDefinition TrafficDefinition) uint16 {
-	switch trafficDefinition {
+func PortForTrafficType(trafficType TrafficType) uint16 {
+	switch trafficType {
 	case FTP:
 		return FTP_PORT
 	case SSH:
@@ -152,13 +153,15 @@ func PortForTrafficType(trafficDefinition TrafficDefinition) uint16 {
 		return P2P_PORT
 	case BITTORRENT:
 		return BITTORRENT_PORT
+	case CLDAP:
+		return CLDAP_PORT
 	}
 	log.Fatal("Unknown traffic definition")
 	return 0
 }
 
-func ProtocollForTrafficType(trafficDefinition TrafficDefinition) int {
-	switch trafficDefinition {
+func ProtocollForTrafficType(trafficType TrafficType) int {
+	switch trafficType {
 	case FTP:
 		return 6
 	case SSH:
@@ -182,6 +185,8 @@ func ProtocollForTrafficType(trafficDefinition TrafficDefinition) int {
 	case P2P:
 		return 17
 	case BITTORRENT:
+		return 17
+	case CLDAP:
 		return 17
 	default:
 	}

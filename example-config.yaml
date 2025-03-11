@@ -1,0 +1,28 @@
+- collector:
+    ip: 127.0.0.1
+    port: 3055
+  flows:
+    - traffic-type: ntp
+      reporting-intervall: 1s
+      packets-per-flow: 10
+      bytes-per-flow: 280
+      sample-intervall: 5
+    - traffic-type: dns
+      reporting-intervall: 1s
+      packets-per-flow: 10
+      bytes-per-flow: 280
+      sample-intervall: 5
+- collector:
+    ip: localhost
+    port: 3055
+  flows:
+    - traffic-type: icmp
+      reporting-intervall: 1s
+      packets-per-flow: 10
+      bytes-per-flow: 10
+      sample-intervall: 1
+    - traffic-type: CLDAP
+      reporting-intervall: 1s
+      packets-per-flow: 10
+      bytes-per-flow: 280
+      sample-intervall: 5
