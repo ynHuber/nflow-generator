@@ -39,7 +39,8 @@ var opts struct {
 	ReportingIntervall string `short:"i" long:"reporting-intervall" description:"intervall in which the flow should be send to the collector"`
 	NrOfPackets        int    `short:"n" long:"packets-per-flow" description:"set the number of reported packets per flow"`
 	BytesPerFlow       int    `short:"b" long:"bytes-per-flow" description:"set the number of reported bytes per flow"`
-	TrafficDef         string `short:"d" long:"defiendTraffic" description:"generated netflow traffic definition (default=ntp)"`
+	TrafficDef         string `short:"d" long:"defiendTraffic" description:"generated netflow traffic definition" default:"ntp"`
+	SampleInterval     uint16 `short:"s" long:"sample-intervall" description:"Sample intervall stated in the netflow headers" default:"1"`
 }
 
 func main() {
@@ -90,7 +91,7 @@ func main() {
 	start := time.Now()
 	for {
 		flowEnd := start.Add(intervall)
-		data := GenerateNetflow(opts.BytesPerFlow, opts.NrOfPackets, intervall, trafficDef)
+		data := GenerateNetflow(opts.BytesPerFlow, opts.NrOfPackets, intervall, trafficDef, opts.SampleInterval)
 		buffer := BuildNFlowPayload(data)
 		_, err = conn.Write(buffer.Bytes())
 		if err != nil {
@@ -168,7 +169,8 @@ Application Options:
         bittorrent - generates udp/6682
   -n, --nr-of-packets-per-flow= number of packets per flow. (default=10)
   -p, --port= port number of the target netflow collector
-  -r  --reporting-intervall= intervall in which flow messages should be send to the collector
+  -r, --reporting-intervall= intervall in which flow messages should be send to the collector
+  -s, --sample-intervall= Sample intervall stated in the netflow headers. (default=1)
   -t, --target= target ip address of the netflow collector
 
 Help Options:

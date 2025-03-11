@@ -95,9 +95,10 @@ func BuildNFlowPayload(data Netflow) bytes.Buffer {
 }
 
 // Generate a netflow packet w/ user-defined record count
-func GenerateNetflow(bytesPerFlow int, nrOfPackets int, flowDuration time.Duration, trafficDefinition TrafficDefinition) Netflow {
+func GenerateNetflow(bytesPerFlow int, nrOfPackets int, flowDuration time.Duration, trafficDefinition TrafficDefinition, sampleInterval uint16) Netflow {
 	data := new(Netflow)
 	header := CreateNFlowHeader()
+	header.SampleInterval = sampleInterval
 	payload := new(NetflowPayload)
 	FillCommonFields(payload, uint32(nrOfPackets), uint32(bytesPerFlow), ProtocollForTrafficType(trafficDefinition), rand.Intn(32))
 
