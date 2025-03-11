@@ -9,24 +9,25 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jessevdk/go-flags"
 )
 
-type Proto int
+type TrafficDefinition int
 
 const (
-	FTP Proto = iota + 1
+	FTP TrafficDefinition = iota + 1
 	SSH
 	DNS
 	HTTP
 	HTTPS
 	NTP
 	SNMP
+	ICMP
 	IMAPS
 	MYSQL
-	HTTPS_ALT
 	P2P
 	BITTORRENT
 )
@@ -34,11 +35,11 @@ const (
 var opts struct {
 	CollectorIP        string `short:"t" long:"target" description:"target ip address of the netflow collector"`
 	CollectorPort      string `short:"p" long:"port" description:"port number of the target netflow collector"`
-	FalseIndex         bool   `short:"f" long:"false-index" description:"generate false SNMP interface indexes, otherwise set to 0"`
 	Help               bool   `short:"h" long:"help" description:"show nflow-generator help"`
 	ReportingIntervall string `short:"i" long:"reporting-intervall" description:"intervall in which the flow should be send to the collector"`
 	NrOfPackets        int    `short:"n" long:"packets-per-flow" description:"set the number of reported packets per flow"`
 	BytesPerFlow       int    `short:"b" long:"bytes-per-flow" description:"set the number of reported bytes per flow"`
+	TrafficDef         string `short:"d" long:"defiendTraffic" description:"generated netflow traffic definition (default=ntp)"`
 }
 
 func main() {
@@ -65,13 +66,15 @@ func main() {
 	}
 
 	if opts.NrOfPackets == 0 {
-		showUsage()
-		os.Exit(1)
+		opts.NrOfPackets = 10
 	}
 	if opts.BytesPerFlow == 0 {
 		showUsage()
 		os.Exit(1)
 	}
+
+	trafficDef := parseTrafficDefinition(opts.TrafficDef)
+
 	collector := opts.CollectorIP + ":" + opts.CollectorPort
 	udpAddr, err := net.ResolveUDPAddr("udp", collector)
 	if err != nil {
@@ -87,7 +90,7 @@ func main() {
 	start := time.Now()
 	for {
 		flowEnd := start.Add(intervall)
-		data := GenerateNetflow(opts.BytesPerFlow, opts.NrOfPackets, intervall)
+		data := GenerateNetflow(opts.BytesPerFlow, opts.NrOfPackets, intervall, trafficDef)
 		buffer := BuildNFlowPayload(data)
 		_, err = conn.Write(buffer.Bytes())
 		if err != nil {
@@ -96,6 +99,46 @@ func main() {
 		time.Sleep(intervall - time.Since(start))
 		start = flowEnd
 	}
+}
+
+func parseTrafficDefinition(trafficDefinitionString string) TrafficDefinition {
+	var trafficDef TrafficDefinition
+
+	switch strings.ToUpper(trafficDefinitionString) {
+	case "":
+		//default
+		trafficDef = NTP
+	case "FTP":
+		trafficDef = FTP
+	case "SSH":
+		trafficDef = SSH
+	case "DNS":
+		trafficDef = DNS
+	case "HTTP":
+		trafficDef = HTTP
+	case "HTTPS":
+		trafficDef = HTTPS
+	case "NTP":
+		trafficDef = NTP
+	case "SNMP":
+		trafficDef = SNMP
+	case "ICMP":
+		trafficDef = ICMP
+	case "IMAPS":
+		trafficDef = IMAPS
+	case "MYSQL":
+		trafficDef = MYSQL
+	case "P2P":
+		trafficDef = P2P
+	case "BITTORRENT":
+		trafficDef = BITTORRENT
+
+	default:
+		log.Fatal("Failed to parse netflow traffic definition" + opts.TrafficDef)
+		showUsage()
+		os.Exit(1)
+	}
+	return trafficDef
 }
 
 func showUsage() {
@@ -108,9 +151,8 @@ Usage:
   Time stamps in all datagrams are set to UTC.
 
 Application Options:
-  -t, --target= target ip address of the netflow collector
-  -p, --port=   port number of the target netflow collector
-  -s, --spike run a second thread generating a spike for the specified protocol
+  -b --bytes-per-flow= number of reported bytes per flow
+  -d --netflow-traffic-definition= generated netflow traffic definition (default=ntp)
     protocol options are as follows:
         ftp - generates tcp/21
         ssh  - generates tcp/22
@@ -119,30 +161,15 @@ Application Options:
         https - generates tcp/443
         ntp - generates udp/123
         snmp - generates ufp/161
+        icmp - generates icmp
         imaps - generates tcp/993
         mysql - generates tcp/3306
-        https_alt - generates tcp/8080
         p2p - generates udp/6681
         bittorrent - generates udp/6682
-  -f, --false-index generate a false snmp index values of 1 or 2. The default is 0. (Optional)
-  -c, --flow-count set the number of flows to generate in each iteration. The default is 16. (Optional)
-
-Example Usage:
-
-    -first build from source (one time)
-    go build   
-
-    -generate default flows to device 172.16.86.138, port 9995
-    ./nflow-generator -t 172.16.86.138 -p 9995 
-
-    -generate default flows along with a spike in the specified protocol:
-    ./nflow-generator -t 172.16.86.138 -p 9995 -s ssh
-
-    -generate default flows with "false index" settings for snmp interfaces 
-    ./nflow-generator -t 172.16.86.138 -p 9995 -f
-
-    -generate default flows with up to 256 flows
-    ./nflow-generator -c 128 -t 172.16.86.138 -p 9995
+  -n, --nr-of-packets-per-flow= number of packets per flow. (default=10)
+  -p, --port= port number of the target netflow collector
+  -r  --reporting-intervall= intervall in which flow messages should be send to the collector
+  -t, --target= target ip address of the netflow collector
 
 Help Options:
   -h, --help    Show this help message

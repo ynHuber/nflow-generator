@@ -18,6 +18,7 @@ var sysUptime uint32 = 0
 var flowSequence uint32 = 0
 
 const (
+	ICMP_PORT       = 0
 	FTP_PORT        = 21
 	SSH_PORT        = 22
 	DNS_PORT        = 53
@@ -94,11 +95,11 @@ func BuildNFlowPayload(data Netflow) bytes.Buffer {
 }
 
 // Generate a netflow packet w/ user-defined record count
-func GenerateNetflow(bytesPerFlow int, nrOfPackets int, flowDuration time.Duration) Netflow {
+func GenerateNetflow(bytesPerFlow int, nrOfPackets int, flowDuration time.Duration, trafficDefinition TrafficDefinition) Netflow {
 	data := new(Netflow)
 	header := CreateNFlowHeader()
 	payload := new(NetflowPayload)
-	FillCommonFields(payload, uint32(nrOfPackets), uint32(bytesPerFlow), 17, rand.Intn(32))
+	FillCommonFields(payload, uint32(nrOfPackets), uint32(bytesPerFlow), ProtocollForTrafficType(trafficDefinition), rand.Intn(32))
 
 	payload.SrcIP = IPtoUint32("127.0.0.2")
 	payload.DstIP = IPtoUint32("127.0.0.1")
@@ -115,13 +116,76 @@ func GenerateNetflow(bytesPerFlow int, nrOfPackets int, flowDuration time.Durati
 	payload.DstAsNumber = 553
 
 	payload.SrcPort = uint16(40)
-	payload.DstPort = uint16(NTP_PORT)
+	payload.DstPort = uint16(PortForTrafficType(trafficDefinition))
 
 	records := make([]NetflowPayload, 1)
 	records[0] = *payload
 	data.Header = header
 	data.Records = records
 	return *data
+}
+
+func PortForTrafficType(trafficDefinition TrafficDefinition) uint16 {
+	switch trafficDefinition {
+	case FTP:
+		return FTP_PORT
+	case SSH:
+		return SSH_PORT
+	case DNS:
+		return DNS_PORT
+	case HTTP:
+		return HTTP_PORT
+	case HTTPS:
+		return HTTPS_PORT
+	case NTP:
+		return NTP_PORT
+	case SNMP:
+		return SNMP_PORT
+	case ICMP:
+		return ICMP_PORT
+	case IMAPS:
+		return IMAPS_PORT
+	case MYSQL:
+		return MYSQL_PORT
+	case P2P:
+		return P2P_PORT
+	case BITTORRENT:
+		return BITTORRENT_PORT
+	}
+	log.Fatal("Unknown traffic definition")
+	return 0
+}
+
+func ProtocollForTrafficType(trafficDefinition TrafficDefinition) int {
+	switch trafficDefinition {
+	case FTP:
+		return 6
+	case SSH:
+		return 6
+	case DNS:
+		return 17
+	case HTTP:
+		return 6
+	case HTTPS:
+		return 6
+	case NTP:
+		return 17
+	case SNMP:
+		return 17
+	case ICMP:
+		return 1
+	case IMAPS:
+		return 6
+	case MYSQL:
+		return 6
+	case P2P:
+		return 17
+	case BITTORRENT:
+		return 17
+	default:
+	}
+	log.Fatal("Unknown traffic definition")
+	return 0
 }
 
 // patch up the common fields of the packets
@@ -132,18 +196,9 @@ func FillCommonFields(
 	ipProtocol int,
 	srcPrefixMask int) NetflowPayload {
 
-	// Fill template with values not filled by caller
-	// payload.SrcIP = IPtoUint32("10.154.20.12")
-	// payload.DstIP = IPtoUint32("77.12.190.94")
-	// payload.NextHopIP = IPtoUint32("150.20.145.1")
-	// payload.SrcPort = uint16(9010)
-	// payload.DstPort = uint16(MYSQL_PORT)
-	// payload.SnmpInIndex = genRandUint16(UINT16_MAX)
-	// payload.SnmpOutIndex = genRandUint16(UINT16_MAX)
 	payload.NumPackets = numPacket
 	payload.NumOctets = numBytes
-	// payload.SysUptimeStart = rand.Uint32()
-	// payload.SysUptimeEnd = rand.Uint32()
+
 	payload.Padding1 = 0
 	payload.IpProtocol = uint8(ipProtocol)
 	payload.IpTos = 0
@@ -152,20 +207,13 @@ func FillCommonFields(
 	payload.Padding2 = 0
 
 	// now handle computed values
-	if !opts.FalseIndex { // default interfaces are zero
-		payload.SnmpInIndex = 0
-		payload.SnmpOutIndex = 0
-	} else if payload.SrcIP > payload.DstIP { // false-index
+	if payload.SrcIP > payload.DstIP { // false-index
 		payload.SnmpInIndex = 1
 		payload.SnmpOutIndex = 2
 	} else {
 		payload.SnmpInIndex = 2
 		payload.SnmpOutIndex = 1
 	}
-
-	// log.Infof("S&D : %x %x %d, %d", payload.SrcIP, payload.DstIP, payload.DstPort, payload.SnmpInIndex)
-	// log.Infof("Time: %d %d %d", sysUptime, payload.SysUptimeStart, payload.SysUptimeEnd)
-
 	return *payload
 }
 
@@ -177,10 +225,6 @@ func CreateNFlowHeader() NetflowHeader {
 	nsec := t - sec*int64(time.Second)
 	sysUptime = uint32((t-StartTime)/int64(time.Millisecond)) + 1000
 	flowSequence++
-
-	// log.Infof("Time: %d; Seconds: %d; Nanoseconds: %d\n", t, sec, nsec)
-	// log.Infof("StartTime: %d; sysUptime: %d", StartTime, sysUptime)
-	// log.Infof("FlowSequence %d", flowSequence)
 
 	h := new(NetflowHeader)
 	h.Version = 5
@@ -195,19 +239,7 @@ func CreateNFlowHeader() NetflowHeader {
 	return *h
 }
 
-func genRandUint16(max int) uint16 {
-	return uint16(rand.Intn(max))
-}
-
 func IPtoUint32(s string) uint32 {
 	ip := net.ParseIP(s)
 	return binary.BigEndian.Uint32(ip.To4())
-}
-
-func genRandUint32(max int) uint32 {
-	return uint32(rand.Intn(max))
-}
-
-func randomNum(min, max int) int {
-	return rand.Intn(max-min) + min
 }
