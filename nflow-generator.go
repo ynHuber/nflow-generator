@@ -73,12 +73,20 @@ func runWithConfig(configFilePath string) {
 		log.Printf("[error] reading config file: %s", err)
 		return
 	}
-	generatorConfigurations := ParseGeneratorConfigurations(configFile)
+	configuration := ParseConfiguration(configFile)
+
+	if configuration.SNMPServerConfiguration != nil {
+		snmpStartupWait := &sync.WaitGroup{}
+		snmpStartupWait.Add(1)
+		go runMockSNMPServer(configuration.SNMPServerConfiguration, snmpStartupWait)
+		snmpStartupWait.Wait()
+	}
 
 	wg := &sync.WaitGroup{}
-	for _, generatorConfiguration := range generatorConfigurations {
+	for _, generatorConfiguration := range configuration.GeneratorConfigurations {
 		go runGenerator(generatorConfiguration, wg)
 	}
+
 	// wait for wait group to register in runGenerator
 	time.Sleep(time.Duration(time.Second))
 	wg.Wait()
@@ -119,11 +127,11 @@ func runSimpleNetflowGeneration(opts CommandLineOptions) {
 	}
 
 	wg := &sync.WaitGroup{}
-	runGenerator(generatorConfiguration, wg)
+	runGenerator(&generatorConfiguration, wg)
 	wg.Wait()
 }
 
-func runGenerator(generatorConfiguration GeneratorConfiguration, wg *sync.WaitGroup) {
+func runGenerator(generatorConfiguration *GeneratorConfiguration, wg *sync.WaitGroup) {
 	collectorConfiguration := generatorConfiguration.CollectorConfiguration
 	collector := collectorConfiguration.CollectorIP + ":" + collectorConfiguration.CollectorPort
 	udpAddr, err := net.ResolveUDPAddr("udp", collector)

@@ -1,28 +1,52 @@
-- collector:
-    ip: 127.0.0.1
-    port: 3055
-  flows:
-    - traffic-type: ntp
-      reporting-intervall: 1s
-      packets-per-flow: 10
-      bytes-per-flow: 280
-      sample-intervall: 5
-    - traffic-type: dns
-      reporting-intervall: 1s
-      packets-per-flow: 10
-      bytes-per-flow: 280
-      sample-intervall: 5
-- collector:
-    ip: localhost
-    port: 3055
-  flows:
-    - traffic-type: icmp
-      reporting-intervall: 1s
-      packets-per-flow: 10
-      bytes-per-flow: 10
-      sample-intervall: 1
-    - traffic-type: CLDAP
-      reporting-intervall: 1s
-      packets-per-flow: 10
-      bytes-per-flow: 280
-      sample-intervall: 5
+generators:
+  - collector:
+      ip: 127.0.0.1
+      port: 3055
+    flows:
+      - traffic-type: ntp
+        reporting-intervall: 1s
+        packets-per-flow: 10
+        bytes-per-flow: 280
+        sample-intervall: 5
+      - traffic-type: dns
+        reporting-intervall: 1s
+        packets-per-flow: 10
+        bytes-per-flow: 280
+        sample-intervall: 5
+  - collector:
+      ip: localhost
+      port: 3055
+    flows:
+      - traffic-type: icmp
+        reporting-intervall: 1s
+        packets-per-flow: 10
+        bytes-per-flow: 10
+        sample-intervall: 1
+      - traffic-type: CLDAP
+        reporting-intervall: 1s
+        packets-per-flow: 10
+        bytes-per-flow: 280
+        sample-intervall: 5
+snmp:
+  ip: localhost
+  port: 161
+  community: community
+  mockOIDs:
+    - oid: ".1.3.6.1.2.1.31.1.1.1.1.1"
+      value: "interface1"
+      type: "string"
+    - oid: ".1.3.6.1.2.1.31.1.1.1.15.1"
+      value: "100000000000"
+      type: "uint64"
+    - oid: ".1.3.6.1.2.1.31.1.1.1.18.1"
+      value: "interface1 - 100 Gbps"
+      type: "string"
+    - oid: ".1.3.6.1.2.1.31.1.1.1.1.2"
+      value: "interface2"
+      type: "string"
+    - oid: ".1.3.6.1.2.1.31.1.1.1.15.2"
+      value: "100000000000"
+      type: "uint64"
+    - oid: ".1.3.6.1.2.1.31.1.1.1.18.2"
+      value: "interface2 - 100 Gbps"
+      type: "string"
