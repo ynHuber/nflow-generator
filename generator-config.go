@@ -1,6 +1,9 @@
 package main
 
-import "gopkg.in/yaml.v2"
+import (
+	"github.com/rs/zerolog/log"
+	"gopkg.in/yaml.v2"
+)
 
 type OIDType string
 
@@ -53,7 +56,7 @@ func ParseConfiguration(b []byte) Configuration {
 	configuration := new(Configuration)
 	err := yaml.Unmarshal(b, configuration)
 	if err != nil {
-		log.Fatalf("[error] Error parsing configuration YAML: %v", err)
+		log.Fatal().Err(err).Msg("Error parsing configuration YAML")
 	}
 	return *configuration
 }

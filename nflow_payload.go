@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"net"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 // Start time for this instance, used to compute sysUptime
@@ -84,12 +86,12 @@ func BuildNFlowPayload(data Netflow) bytes.Buffer {
 	buffer := new(bytes.Buffer)
 	err := binary.Write(buffer, binary.BigEndian, &data.Header)
 	if err != nil {
-		log.Println("Writing netflow header failed:", err)
+		log.Warn().Err(err).Msg("Writing netflow header failed:")
 	}
 	for _, record := range data.Records {
 		err := binary.Write(buffer, binary.BigEndian, &record)
 		if err != nil {
-			log.Println("Writing netflow record failed:", err)
+			log.Warn().Err(err).Msg("Writing netflow record failed:")
 		}
 	}
 	return *buffer
@@ -156,7 +158,7 @@ func PortForTrafficType(trafficType TrafficType) uint16 {
 	case CLDAP:
 		return CLDAP_PORT
 	}
-	log.Fatal("Unknown traffic definition")
+	log.Fatal().Msg("Unknown traffic definition")
 	return 0
 }
 
@@ -190,7 +192,7 @@ func ProtocollForTrafficType(trafficType TrafficType) int {
 		return 17
 	default:
 	}
-	log.Fatal("Unknown traffic definition")
+	log.Fatal().Msg("Unknown traffic definition")
 	return 0
 }
 

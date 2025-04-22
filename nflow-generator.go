@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/jessevdk/go-flags"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 type TrafficType int
@@ -48,6 +50,10 @@ type CommandLineOptions struct {
 
 func main() {
 	opts := CommandLineOptions{}
+
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.DateTime})
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 
 	_, err := flags.Parse(&opts)
 	if err != nil {
@@ -136,7 +142,7 @@ func runGenerator(generatorConfiguration *GeneratorConfiguration, wg *sync.WaitG
 	collector := collectorConfiguration.CollectorIP + ":" + collectorConfiguration.CollectorPort
 	udpAddr, err := net.ResolveUDPAddr("udp", collector)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err)
 	}
 	conn, err := net.DialUDP("udp", nil, udpAddr)
 	defer func() {
@@ -144,7 +150,7 @@ func runGenerator(generatorConfiguration *GeneratorConfiguration, wg *sync.WaitG
 		conn.Close()
 	}()
 	if err != nil {
-		log.Fatal("Error connecting to the target collector: ", err)
+		log.Fatal().Err(err).Msg("Error connecting to the target collector:")
 	}
 
 	for _, flowDefinition := range generatorConfiguration.FlowConfigurations {
@@ -152,7 +158,7 @@ func runGenerator(generatorConfiguration *GeneratorConfiguration, wg *sync.WaitG
 		go sendFlows(conn, flowDefinition, wg)
 	}
 
-	log.Infof("sending netflow data to a collector ip: %s and port: %s. \n"+
+	log.Info().Msgf("sending netflow data to a collector ip: %s and port: %s. - "+
 		"Use ctrl^c to terminate the app.", collectorConfiguration.CollectorIP, collectorConfiguration.CollectorPort)
 }
 
@@ -164,7 +170,7 @@ func sendFlows(conn *net.UDPConn, flowDefinition *FlowConfiguration, wg *sync.Wa
 
 	intervall, err := time.ParseDuration(flowDefinition.ReportingIntervall)
 	if err != nil {
-		log.Fatal("Failed to parse reporting intervall \""+flowDefinition.ReportingIntervall+"\" due to ", err.Error())
+		log.Fatal().Err(err).Msgf("Failed to parse reporting intervall \"%s\" due to ", flowDefinition.ReportingIntervall)
 	}
 
 	start := time.Now()
@@ -174,7 +180,7 @@ func sendFlows(conn *net.UDPConn, flowDefinition *FlowConfiguration, wg *sync.Wa
 		buffer := BuildNFlowPayload(data)
 		_, err = conn.Write(buffer.Bytes())
 		if err != nil {
-			log.Fatal("Error connecting to the target collector: ", err)
+			log.Fatal().Err(err).Msg("Error connecting to the target collector")
 		}
 		time.Sleep(intervall - time.Since(start))
 		start = flowEnd
@@ -216,7 +222,7 @@ func parseTrafficType(trafficTypeString string) TrafficType {
 		trafficType = CLDAP
 
 	default:
-		log.Fatal("Failed to parse netflow traffic definition" + trafficTypeString)
+		log.Fatal().Msgf("Failed to parse netflow traffic definition %s", trafficTypeString)
 		showUsage()
 		os.Exit(1)
 	}

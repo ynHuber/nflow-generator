@@ -1,12 +1,11 @@
 package main
 
 import (
-	"os"
 	"strconv"
 	"sync"
 
 	"github.com/gosnmp/gosnmp"
-	"github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"github.com/slayercat/GoSNMPServer"
 )
 
@@ -27,13 +26,12 @@ OIDLooP:
 			oidType = gosnmp.Counter64
 			oidValueUint, err := strconv.ParseUint(oid.Value, 10, 0)
 			if err != nil {
-				log.Warn(err)
+				log.Warn().Err(err)
 				continue OIDLooP
 			}
-			log.Info(oidValueUint)
 			msg = GoSNMPServer.Asn1Counter64Unwrap(oidValueUint)
 		default:
-			log.Warn("unknown oid Type " + oid.Type)
+			log.Warn().Msgf("unknown oid Type %s", oid.Type)
 			continue OIDLooP
 		}
 
@@ -46,12 +44,10 @@ OIDLooP:
 		oids = append(oids, &oidObj)
 
 	}
-	var log = logrus.New()
-	log.Out = os.Stdout
-	log.Level = logrus.InfoLevel
+	var logger = &ZeroLogger{}
 
 	master := GoSNMPServer.MasterAgent{
-		Logger: log,
+		Logger: logger,
 		SecurityConfig: GoSNMPServer.SecurityConfig{
 			AuthoritativeEngineBoots: 1,
 			Users: []gosnmp.UsmSecurityParameters{
@@ -75,7 +71,7 @@ OIDLooP:
 	serverAddress := conf.CollectorIP + ":" + conf.CollectorPort
 	err := server.ListenUDP("udp", serverAddress)
 	if err != nil {
-		log.Printf("Error in listen: %+v", err)
+		log.Error().Err(err).Msg("Error in listen")
 	}
 	go server.ServeForever()
 	startUpWait.Done()
